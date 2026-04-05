@@ -169,6 +169,48 @@ function kde(data, nPts, sMin, sMax) {
 
 function col(data, name) { return data.map(r => r[name]).filter(v => v != null); }
 
+// ── Impact Split Computation ──
+function computeAiSplit(data, aiCol) {
+  const vals = col(data, aiCol);
+  if (!vals.length) return null;
+  const improved = vals.filter(v => v > 3).length;
+  const worsened = vals.filter(v => v < 3).length;
+  return { pctPos: Math.round(100 * improved / vals.length), pctNeg: Math.round(100 * worsened / vals.length) };
+}
+
+function computeLikertSplit(data, likertItems) {
+  const posItems = likertItems.filter(li => li.pos).map(li => li.col);
+  const negItems = likertItems.filter(li => !li.pos).map(li => li.col);
+  let posCnt = 0, negCnt = 0, total = 0;
+  data.forEach(row => {
+    const posVals = posItems.map(c => row[c]).filter(v => v != null);
+    const negVals = negItems.map(c => row[c]).filter(v => v != null);
+    if (!posVals.length && !negVals.length) return;
+    total++;
+    if (posVals.length && mean(posVals) > 3) posCnt++;
+    if (negVals.length && mean(negVals) > 3) negCnt++;
+  });
+  return total ? { pctPos: Math.round(100 * posCnt / total), pctNeg: Math.round(100 * negCnt / total) } : null;
+}
+
+const IMPACT_OBS = {
+  satisfaction: 'Daily AI users report the highest satisfaction gains. Those with graduate education show more nuanced views\u2014acknowledging convenience benefits while questioning deeper effects on life evaluation.',
+  health: 'Weekly and daily users are more likely to report health improvements. Women report slightly stronger positive effects, particularly in health information access and stress management.',
+  purpose: 'Respondents with graduate education report stronger AI contributions to purpose. Among daily users, responses are polarized\u2014some find AI clarifying, others find it distracting from deeper meaning.',
+  character: 'Improvement rates are highest among occasional AI users. Daily users express more concern about AI\u2019s effect on moral reasoning and the development of patience and resilience.',
+  social: 'Women report more positive social effects from AI. Daily users are the most polarized group\u2014reporting both the strongest positive and negative effects on relationships.',
+  financial: 'Those with lower education levels report more financial benefit from AI tools. Daily users see the largest gains, likely through enhanced productivity and financial planning.',
+  engagement: 'Heavy AI users report the highest engagement improvements. Those who use AI for creative work show particularly strong gains in flow states and deep absorption.',
+  mastery: 'Daily users and those with higher education report the strongest mastery gains. The gap between frequent and infrequent users is among the widest across all flourishing dimensions.',
+  agency: 'Occasional users feel most empowered by AI; daily users more frequently report reduced autonomy. Education level shows minimal effect on agency-related perceptions.',
+  creativity: 'Frequent AI users see more creative benefit but also express more concern about originality. Those using AI for image generation report the highest creative enhancement.',
+  reasoning: 'Daily users are most likely to report both reasoning benefits and concerns. Higher education correlates with more nuanced and critical views of AI\u2019s cognitive effects.',
+  work: 'Daily AI users and those with higher education report the strongest workplace benefits. Gender differences are minimal, but usage frequency strongly predicts perceived work improvement.',
+  learning: 'Younger respondents and daily users report the highest learning benefits. Those with doctoral education express more concern about depth of understanding and intellectual independence.',
+  emotional: 'Women report more emotional benefit from AI conversations. Daily users are most likely to turn to AI for emotional support, but also most aware of its limitations.',
+  meaning: 'Heavy AI users show the widest split on meaning\u2014some find AI powerfully clarifying for life direction, while others report it makes their sense of purpose harder to discern.',
+};
+
 // ── Tooltip ──
 const TT = {
   el: null,
@@ -191,7 +233,25 @@ function renderSpectrumBar(container, data, qConfig, chartId) {
   if (!vals.length) { container.innerHTML = '<p class="annotation">Insufficient data.</p>'; return null; }
 
   const isPrimary = qConfig.primary;
-  const margin = { top: isPrimary ? 55 : 42, right: 20, bottom: 50, left: 20 };
+
+  // Pre-compute AI-adjusted values to determine layout
+  let aiAdj = [];
+  if (aiVals.length > 5) {
+    const scaleRange = qConfig.scale[1] - qConfig.scale[0];
+    const scaleFactor = scaleRange / 10;
+    data.forEach(r => {
+      const base = r[qConfig.col];
+      const ai = r[qConfig.aiCol];
+      if (base != null && ai != null) {
+        const adj = Math.max(qConfig.scale[0], Math.min(qConfig.scale[1], base + (ai - 3) * scaleFactor));
+        aiAdj.push(adj);
+      }
+    });
+    if (aiAdj.length <= 5) aiAdj = [];
+  }
+  const hasAIDensity = aiAdj.length > 5;
+
+  const margin = { top: isPrimary ? 65 : 50, right: 20, bottom: 50, left: 20 };
   const totalW = container.clientWidth || 800;
   const w = totalW - margin.left - margin.right;
   const trackH = isPrimary ? 26 : 20;
@@ -224,39 +284,27 @@ function renderSpectrumBar(container, data, qConfig, chartId) {
   g.append('rect').attr('x',0).attr('y',densityH).attr('width',w).attr('height',trackH)
     .attr('rx',trackH/2).attr('fill',`url(#${gradId})`).attr('opacity',0.25);
 
-  // ── Baseline density (light grey) ──
+  // ── Baseline density (light grey, upward from track) ──
   const density1 = kde(vals, 120, qConfig.scale[0], qConfig.scale[1]);
   let maxY = d3.max(density1, d => d.y) || 1;
 
-  // ── AI-adjusted density (dark grey) ──
-  let density2 = [], aiAdj = [];
-  if (aiVals.length > 5) {
-    const scaleRange = qConfig.scale[1] - qConfig.scale[0];
-    const scaleFactor = scaleRange / 10;
-    data.forEach(r => {
-      const base = r[qConfig.col];
-      const ai = r[qConfig.aiCol];
-      if (base != null && ai != null) {
-        const adj = Math.max(qConfig.scale[0], Math.min(qConfig.scale[1], base + (ai - 3) * scaleFactor));
-        aiAdj.push(adj);
-      }
-    });
-    if (aiAdj.length > 5) {
-      density2 = kde(aiAdj, 120, qConfig.scale[0], qConfig.scale[1]);
-      const maxY2 = d3.max(density2, d => d.y) || 0;
-      maxY = Math.max(maxY, maxY2);
-    }
+  // ── AI-adjusted density ──
+  let density2 = [];
+  if (hasAIDensity) {
+    density2 = kde(aiAdj, 120, qConfig.scale[0], qConfig.scale[1]);
+    const maxY2 = d3.max(density2, d => d.y) || 0;
+    maxY = Math.max(maxY, maxY2);
   }
 
   const yScale = d3.scaleLinear().domain([0, maxY]).range([densityH, 0]);
   const area = d3.area().x(d => x(d.x)).y0(densityH).y1(d => yScale(d.y)).curve(d3.curveBasis);
 
-  // Draw baseline density (light grey)
+  // Draw baseline density (upward from track)
   const densityPath1 = g.append('path').datum(density1).attr('d', area)
     .attr('fill', 'rgba(0,0,0,0.06)').attr('stroke', 'rgba(0,0,0,0.18)').attr('stroke-width', 1.5)
     .style('opacity', 0);
 
-  // Draw AI-adjusted density (dark grey)
+  // Draw AI-adjusted density (same upward direction, overlapping)
   let densityPath2 = null;
   if (density2.length) {
     densityPath2 = g.append('path').datum(density2).attr('d', area)
@@ -282,16 +330,19 @@ function renderSpectrumBar(container, data, qConfig, chartId) {
   const med = median(vals);
   const sd = stddev(vals);
 
+  const lineBottom = densityH + trackH + 5;
+  const avgLabelSize = isPrimary ? '16px' : '14px';
+
   const avgLine = g.append('line')
-    .attr('x1',x(avg)).attr('x2',x(avg)).attr('y1',-5).attr('y2',densityH+trackH+5)
+    .attr('x1',x(avg)).attr('x2',x(avg)).attr('y1',-5).attr('y2',lineBottom)
     .attr('stroke','#0f172a').attr('stroke-width',2).attr('stroke-dasharray','5,3').style('opacity',0);
 
-  const avgLabel = g.append('text').attr('x',x(avg)).attr('y',-14).attr('text-anchor','middle')
-    .attr('font-family',"'Newsreader', serif").attr('font-size',isPrimary?'26px':'20px')
+  const avgLabel = g.append('text').attr('x',x(avg)).attr('y',-10).attr('text-anchor','middle')
+    .attr('font-family',"'Newsreader', serif").attr('font-size',avgLabelSize)
     .attr('font-weight','500').attr('fill','#0f172a').text(avg.toFixed(1)).style('opacity',0);
 
   // Avg tooltip
-  g.append('rect').attr('x',x(avg)-15).attr('y',-30).attr('width',30).attr('height',densityH+trackH+35)
+  g.append('rect').attr('x',x(avg)-15).attr('y',-30).attr('width',30).attr('height',lineBottom+30)
     .attr('fill','transparent').style('cursor','pointer')
     .on('mouseenter', e => TT.show(
       `<strong>Current Average</strong><div class="tt-row"><span class="tt-label">Mean</span><span class="tt-val">${avg.toFixed(2)}</span></div>` +
@@ -302,28 +353,41 @@ function renderSpectrumBar(container, data, qConfig, chartId) {
 
   // ── AI average marker ──
   let aiGroup = null, tensionLine = null;
-  if (aiAdj.length > 5) {
+  if (hasAIDensity) {
     const aiAvg = mean(aiAdj);
     const aiMeanRaw = mean(aiVals);
     const pullColor = aiMeanRaw > 3.1 ? '#16a34a' : aiMeanRaw < 2.9 ? '#dc2626' : '#64748b';
-    const aiY = densityH + trackH / 2;
+    const arrowY = densityH + trackH / 2;
 
-    // Tension line
-    tensionLine = g.append('line').attr('x1',x(avg)).attr('x2',x(aiAvg)).attr('y1',aiY).attr('y2',aiY)
-      .attr('stroke',pullColor).attr('stroke-width',2.5)
-      .attr('stroke-dasharray','6,3').style('opacity',0);
+    // SVG arrowhead marker
+    const arrowId = `arrow-${chartId}`;
+    defs.append('marker').attr('id', arrowId)
+      .attr('viewBox', '0 0 10 10').attr('refX', 9).attr('refY', 5)
+      .attr('markerWidth', 7).attr('markerHeight', 7).attr('orient', 'auto')
+      .append('path').attr('d', 'M 0 1 L 10 5 L 0 9 z').attr('fill', pullColor);
 
-    // "AI" label — offset if too close to baseline avg
-    const pxDist = Math.abs(x(aiAvg) - x(avg));
-    const labelOffset = pxDist < 40 ? (aiAvg >= avg ? 24 : -24) : 0;
+    // Arrow line connecting general → AI
+    tensionLine = g.append('g').style('opacity', 0);
+    tensionLine.append('line')
+      .attr('x1', x(avg)).attr('x2', x(aiAvg)).attr('y1', arrowY).attr('y2', arrowY)
+      .attr('stroke', pullColor).attr('stroke-width', 2.5)
+      .attr('marker-end', `url(#${arrowId})`);
+
+    // AI group — logo on top of baseline line, same font size
+    const circleR = 14;
     aiGroup = g.append('g').attr('transform',`translate(${x(aiAvg)},0)`).style('opacity',0).style('cursor','pointer');
-    aiGroup.append('line').attr('x1',0).attr('x2',0).attr('y1',-5).attr('y2',densityH+trackH+5)
+    // AI dashed line extends through full chart
+    aiGroup.append('line').attr('x1',0).attr('x2',0).attr('y1',-5).attr('y2',lineBottom)
       .attr('stroke',pullColor).attr('stroke-width',1.5).attr('stroke-dasharray','3,2');
-    aiGroup.append('text').attr('x',labelOffset).attr('y',-16).attr('text-anchor','middle')
-      .attr('font-family',"'Inter', sans-serif").attr('font-size','12px').attr('font-weight','700')
-      .attr('fill','#0f172a').text('AI');
-    aiGroup.append('text').attr('x',labelOffset).attr('y',-4).attr('text-anchor','middle')
-      .attr('font-family',"'Newsreader', serif").attr('font-size','14px').attr('font-weight','500')
+    // Colored circle with "AI" — matches line color, positioned above baseline number
+    aiGroup.append('circle').attr('cx',0).attr('cy',-30)
+      .attr('r',circleR).attr('fill',pullColor);
+    aiGroup.append('text').attr('x',0).attr('y',-26).attr('text-anchor','middle')
+      .attr('font-family',"'Inter', sans-serif").attr('font-size','11px').attr('font-weight','700')
+      .attr('fill','#ffffff').text('AI');
+    // AI number — same size as baseline number
+    aiGroup.append('text').attr('x',0).attr('y',-48).attr('text-anchor','middle')
+      .attr('font-family',"'Newsreader', serif").attr('font-size',avgLabelSize).attr('font-weight','500')
       .attr('fill', pullColor).text(aiAvg.toFixed(1));
 
     const aiQText = QUESTIONS[qConfig.aiCol] || 'How has using AI tools affected this dimension?';
@@ -338,26 +402,28 @@ function renderSpectrumBar(container, data, qConfig, chartId) {
   }
 
   // Scale labels
-  g.append('text').attr('x',0).attr('y',densityH+trackH+22)
+  const scaleBase = densityH + trackH;
+  g.append('text').attr('x',0).attr('y',scaleBase+22)
     .attr('font-family',"'Inter', sans-serif").attr('font-size','11px').attr('fill','#94a3b8').text(qConfig.labels[0]);
-  g.append('text').attr('x',w).attr('y',densityH+trackH+22).attr('text-anchor','end')
+  g.append('text').attr('x',w).attr('y',scaleBase+22).attr('text-anchor','end')
     .attr('font-family',"'Inter', sans-serif").attr('font-size','11px').attr('fill','#94a3b8').text(qConfig.labels[1]);
 
   // Ticks
   const tickStep = qConfig.scale[1] <= 5 ? 1 : 2;
   d3.range(qConfig.scale[0], qConfig.scale[1]+1, tickStep).forEach(t => {
-    g.append('line').attr('x1',x(t)).attr('x2',x(t)).attr('y1',densityH+trackH+2).attr('y2',densityH+trackH+6).attr('stroke','#cbd5e1');
-    g.append('text').attr('x',x(t)).attr('y',densityH+trackH+16).attr('text-anchor','middle')
+    g.append('line').attr('x1',x(t)).attr('x2',x(t)).attr('y1',scaleBase+2).attr('y2',scaleBase+6).attr('stroke','#cbd5e1');
+    g.append('text').attr('x',x(t)).attr('y',scaleBase+16).attr('text-anchor','middle')
       .attr('font-family',"'Inter', sans-serif").attr('font-size','9px').attr('fill','#cbd5e1').text(t);
   });
 
   // Legend
-  const legY = densityH + trackH + 34;
+  const legY = scaleBase + 34;
   g.append('rect').attr('x',0).attr('y',legY).attr('width',12).attr('height',8).attr('rx',2).attr('fill','rgba(0,0,0,0.08)');
-  g.append('text').attr('x',16).attr('y',legY+7).attr('font-family',"'Inter', sans-serif").attr('font-size','9px').attr('fill','#94a3b8').text('Current');
+  g.append('text').attr('x',16).attr('y',legY+7).attr('font-family',"'Inter', sans-serif").attr('font-size','9px').attr('fill','#94a3b8').text('General');
   if (density2.length) {
-    g.append('rect').attr('x',70).attr('y',legY).attr('width',12).attr('height',8).attr('rx',2).attr('fill','rgba(0,0,0,0.18)');
-    g.append('text').attr('x',86).attr('y',legY+7).attr('font-family',"'Inter', sans-serif").attr('font-size','9px').attr('fill','#94a3b8').text('AI-adjusted');
+    g.append('text').attr('x',68).attr('y',legY+8).attr('font-family',"'Inter', sans-serif").attr('font-size','12px').attr('fill','#94a3b8').text('\u2192');
+    g.append('rect').attr('x',82).attr('y',legY).attr('width',12).attr('height',8).attr('rx',2).attr('fill','rgba(0,0,0,0.18)');
+    g.append('text').attr('x',98).attr('y',legY+7).attr('font-family',"'Inter', sans-serif").attr('font-size','9px').attr('fill','#94a3b8').text('AI-adjusted');
   }
 
   return { densityPath1, densityPath2, avgLine, avgLabel, tensionLine, aiGroup };
@@ -543,21 +609,21 @@ function genEditorial(section, data) {
     }
   }
   const texts = {
-    satisfaction: `Respondents report ${lvl} life satisfaction, averaging ${avg.toFixed(1)} out of 10. ${aiText}`,
-    health: `Overall health ratings center around ${avg.toFixed(1)}/10, placing the sample in the ${lvl} range. ${aiText}`,
-    purpose: `Respondents report a ${lvl} sense that the things they do are worthwhile (${avg.toFixed(1)}/10). ${aiText}`,
-    character: `Self-assessed character scores average ${avg.toFixed(1)}/10 \u2014 a ${lvl} reading. ${aiText}`,
-    social: `Social relationship satisfaction sits at ${avg.toFixed(1)}/10. ${aiText}`,
-    financial: `Financial worry averages ${avg.toFixed(1)}/10 (higher = more worry). ${aiText}`,
-    engagement: `Engagement levels average ${avg.toFixed(1)}/5 \u2014 ${lvl} absorption in activities. ${aiText}`,
-    mastery: `Skill utilization averages ${avg.toFixed(1)}/5, suggesting ${lvl} mastery expression. ${aiText}`,
-    agency: `Agreement that others control decisions averages ${avg.toFixed(1)}/5. ${aiText}`,
-    creativity: `Respondents show ${lvl} agreement that AI enhances creative output. The balance between AI as collaborator and substitute remains a live tension.`,
-    reasoning: `Critical thinking in the age of AI reveals a complex landscape. Respondents show ${lvl} agreement that AI enhances analytical capacity.`,
-    work: `Workplace AI integration shows ${lvl} agreement that AI positively impacts work, alongside concerns about meaning and displacement.`,
-    learning: `AI\u2019s role in learning shows ${lvl} agreement that it makes new topics more approachable.`,
-    emotional: `AI\u2019s entry into emotional support shows mixed results. Benefits from AI conversations coexist with concerns about delayed professional help-seeking.`,
-    meaning: `Life direction and meaning-making with AI reveal generative tension: ${lvl} agreement that AI helps clarify goals, with concern about weakened identity.`,
+    satisfaction: `Respondents report ${lvl} life satisfaction, averaging ${avg.toFixed(1)} out of 10. ${aiText} Life satisfaction is one of the most robust indicators of overall wellbeing, reflecting how people evaluate their lives as a whole rather than momentary emotions. The distribution above reveals the spread of experiences\u2014whether satisfaction is broadly shared or concentrated among certain groups. When AI shifts this distribution, it suggests technology may be influencing not just productivity or convenience but the deeper evaluative judgments people make about their lives.`,
+    health: `Overall health ratings center around ${avg.toFixed(1)}/10, placing the sample in the ${lvl} range. ${aiText} Self-rated health captures dimensions that clinical measures often miss and is a powerful predictor of actual outcomes. AI\u2019s influence here is multifaceted: tools may improve access to health information and reduce stress through task automation, but they may also contribute to sedentary behavior or erode trust in professional medical advice. The gap between the baseline and AI-adjusted distributions reflects these complex trade-offs.`,
+    purpose: `Respondents report a ${lvl} sense that the things they do are worthwhile (${avg.toFixed(1)}/10). ${aiText} Purpose and meaning represent the existential dimension of flourishing\u2014the feeling that one\u2019s life has direction and significance. As AI takes on more tasks previously done by humans, questions about purpose become increasingly urgent. Does AI free people to pursue more meaningful work, or does it hollow out the activities that gave life meaning? The data suggests the answer is nuanced, with AI\u2019s effect varying across individuals and contexts.`,
+    character: `Self-assessed character scores average ${avg.toFixed(1)}/10\u2014a ${lvl} reading. ${aiText} Character and virtue encompass qualities like integrity, empathy, and moral reasoning. The question of how AI affects character development is among the most philosophically rich here. If AI provides instant answers, does the habit of intellectual struggle that builds character atrophy? Conversely, might exposure to diverse perspectives through AI strengthen moral reasoning? The tension between convenience and character development is reflected in these results.`,
+    social: `Social relationship satisfaction sits at ${avg.toFixed(1)}/10. ${aiText} Human connection remains central to flourishing across virtually all wellbeing frameworks. AI\u2019s role in social life is paradoxical: it can bridge distances and facilitate communication, yet it may also substitute for genuine human interaction or create new forms of social comparison. The distribution reveals how respondents navigate this tension between AI-enhanced connectivity and the irreplaceable quality of human presence.`,
+    financial: `Financial worry averages ${avg.toFixed(1)}/10 (higher = more worry). ${aiText} Financial stability provides the foundation upon which other dimensions of flourishing develop. AI\u2019s impact operates through multiple channels: automation of financial planning, changes in labor markets, new economic opportunities, and shifts in job security. The data captures not just current financial states but the perceived trajectory that AI is creating\u2014whether it represents economic promise or precarity.`,
+    engagement: `Engagement levels average ${avg.toFixed(1)}/5\u2014${lvl} absorption in activities. ${aiText} Flow states and deep engagement represent the experiential peak of human functioning. AI can remove tedious obstacles that prevent flow, but it can also reduce the challenge that makes engagement possible. The balance between helpful assistance and excessive automation shapes whether people experience more or less absorption in their daily activities.`,
+    mastery: `Skill utilization averages ${avg.toFixed(1)}/5, suggesting ${lvl} mastery expression. ${aiText} Mastery\u2014the progressive development and application of skills\u2014is a fundamental human need. AI disrupts this landscape in profound ways: it can accelerate skill acquisition through personalized feedback, but it can also create dependency that prevents deep expertise from developing. The data captures where respondents stand in this evolving relationship between human capability and artificial intelligence.`,
+    agency: `Agreement that others control decisions averages ${avg.toFixed(1)}/5. ${aiText} Agency\u2014the sense of being in control of one\u2019s own life\u2014is a cornerstone of psychological wellbeing. As AI systems increasingly influence decisions in hiring, healthcare, and daily life, questions of human agency become critical. Do people feel that AI tools empower their choices, or do algorithmic recommendations subtly constrain their autonomy? The distribution of responses reveals the spectrum of perceived control in an AI-mediated world.`,
+    creativity: `Respondents show ${lvl} agreement that AI enhances creative output. The balance between AI as collaborator and AI as substitute remains a live tension. Generative AI has fundamentally altered the creative landscape, enabling rapid prototyping and expanding what individuals can produce. Yet this democratization raises deeper questions: does AI-assisted creation carry the same meaning as purely human expression? The item-level breakdown below reveals where respondents see AI as amplifying versus diminishing the creative process.`,
+    reasoning: `Critical thinking in the age of AI reveals a complex landscape. Respondents show ${lvl} agreement that AI enhances analytical capacity. AI can serve as a powerful thinking partner\u2014helping process information, identify patterns, and test hypotheses\u2014but it can also foster intellectual passivity and erode the habit of independent thought. The item-level responses below illustrate this duality, with benefits in information processing coexisting alongside concerns about cognitive dependency.`,
+    work: `Workplace AI integration shows ${lvl} agreement that AI positively impacts work, alongside concerns about meaning and displacement. The transformation of work by AI is already underway and accelerating. While many respondents report that AI makes them more effective, the concerns about job displacement and the hollowing out of meaningful work cannot be dismissed. The item-level detail below captures these contrasting experiences across different aspects of professional life.`,
+    learning: `AI\u2019s role in learning shows ${lvl} agreement that it makes new topics more approachable. Education and lifelong learning are being fundamentally reshaped by AI tools that explain concepts, generate practice problems, and provide instant feedback. The promise is enormous\u2014personalized education at scale\u2014but so are the risks: surface-level understanding, diminished productive struggle, and growing dependence on AI for knowledge that was once internalized. The item-level results illuminate where these benefits and costs are most acute.`,
+    emotional: `AI\u2019s entry into emotional support shows mixed results. Benefits from AI conversations coexist with concerns about delayed professional help-seeking. As AI companions become more sophisticated, more people turn to them for comfort and emotional processing. While this can provide accessible support\u2014especially for those who face barriers to traditional therapy\u2014it also raises questions about the quality of AI empathy and the risk of substituting genuine human connection with algorithmic approximations.`,
+    meaning: `Life direction and meaning-making with AI reveal generative tension: ${lvl} agreement that AI helps clarify goals, with concern about weakened identity. The question of meaning in an age of AI goes to the heart of what it means to be human. If AI can accomplish many tasks that previously gave our lives structure and purpose, where do we find meaning? The data suggests people are actively wrestling with this question\u2014finding AI useful for exploration and self-reflection, while recognizing the risk that it may subtly reshape their sense of self.`,
   };
   return texts[section.id] || `Average: ${avg.toFixed(1)}. ${aiText}`;
 }
@@ -576,15 +642,62 @@ function renderAll(data) {
   demoSection.innerHTML = `<div class="section-inner">
     <span class="section-icon">${ICONS.demographics}</span>
     <h2 class="section-title">Participant Profile</h2>
-    <p class="section-question" style="font-style:normal;max-width:none">${data.length.toLocaleString()} respondents across demographics, education levels, and AI usage patterns.</p>
-    <div class="demo-grid">
-      <div class="demo-chart"><div class="demo-chart-title">Gender</div><div id="chart-gender"></div></div>
-      <div class="demo-chart"><div class="demo-chart-title">Education Level</div><div id="chart-education"></div></div>
-      <div class="demo-chart"><div class="demo-chart-title">AI Usage Frequency (Chatbots)</div><div id="chart-aiusage"></div></div>
+    <p class="editorial" style="opacity:1;transform:none">This dataset draws on <strong>${data.length.toLocaleString()} respondents</strong> recruited through Prolific, representing a broad cross-section of AI users. Understanding who participated is essential context for interpreting the flourishing data that follows\u2014patterns in wellbeing often correlate with demographics, education, and the depth of one\u2019s relationship with AI tools.</p>
+
+    <div class="profile-row">
+      <div class="profile-text">
+        <div class="profile-heading">Who Responded</div>
+        <div class="profile-stat">52% / 45%</div>
+        The sample is nearly balanced by gender, with a slight female majority. Education skews toward the college-educated\u2014common in online survey panels\u2014which is worth noting when generalizing. Higher education levels often correlate with greater AI exposure and more nuanced perceptions of its effects.
+      </div>
+      <div>
+        <div class="demo-chart-title">Gender</div>
+        <div id="chart-gender"></div>
+        <div class="demo-chart-title" style="margin-top:24px">Education Level</div>
+        <div id="chart-education"></div>
+      </div>
     </div>
-    <div class="demo-grid" style="margin-top:32px">
-      <div class="demo-chart"><div class="demo-chart-title">AI Tools Used</div><div id="chart-tools"></div></div>
-      <div class="demo-chart"><div class="demo-chart-title">What AI Is Used For</div><div id="chart-contexts"></div></div>
+
+    <hr class="profile-divider">
+
+    <div class="profile-row">
+      <div>
+        <div class="demo-chart-title">AI Usage Frequency</div>
+        <div id="chart-aiusage"></div>
+      </div>
+      <div class="profile-text">
+        <div class="profile-heading">How Often They Use AI</div>
+        <div class="profile-stat">55% Daily+</div>
+        More than half of respondents use AI tools daily, and nearly 80% engage at least weekly. This is not a sample of casual experimenters\u2014these are people with sustained, habitual relationships with AI, making their perceptions of its impact on wellbeing particularly meaningful. The small proportion of rare or non-users provides a valuable comparison group.
+      </div>
+    </div>
+
+    <hr class="profile-divider">
+
+    <div class="profile-row">
+      <div class="profile-text">
+        <div class="profile-heading">What Tools They Use</div>
+        <div class="profile-stat">99% Chatbots</div>
+        Text chatbots are nearly universal, but the drop-off is steep: AI in office tools and image generators hover around 76%, while embodied AI and autonomous agents remain niche at under 30%. This reveals a population whose AI experience is overwhelmingly conversational and screen-based\u2014the frontier of embodied and agentic AI has yet to reach most users.
+      </div>
+      <div>
+        <div class="demo-chart-title">AI Tools Used</div>
+        <div id="chart-tools"></div>
+      </div>
+    </div>
+
+    <hr class="profile-divider">
+
+    <div class="profile-row">
+      <div>
+        <div class="demo-chart-title">What AI Is Used For</div>
+        <div id="chart-contexts"></div>
+      </div>
+      <div class="profile-text">
+        <div class="profile-heading">Where AI Enters Their Lives</div>
+        <div class="profile-stat">77% Work</div>
+        Work and information search dominate, but the data reveals something more striking further down the list: 55% use AI for relationship advice, 47% for medical guidance, and 42% for emotional support. AI is no longer just a productivity tool\u2014it is being trusted with some of the most intimate and high-stakes dimensions of human life. These are precisely the areas where its impact on flourishing may be most consequential.
+      </div>
     </div>
   </div>`;
   results.appendChild(demoSection);
@@ -651,33 +764,77 @@ function renderAll(data) {
     const primaryQ = section.questions.find(q => q.primary) || section.questions[0];
     const qText = QUESTIONS[primaryQ.col] || primaryQ.col;
 
+    // Compute impact split
+    let split = null;
+    let splitLabels = ['AI Improved', 'AI Worsened'];
+    if (primaryQ.aiCol) {
+      split = computeAiSplit(data, primaryQ.aiCol);
+    } else if (section.likertItems) {
+      split = computeLikertSplit(data, section.likertItems);
+      splitLabels = ['See Benefit', 'See Concern'];
+    }
+
     let html = `<div class="section-inner">
       <span class="section-icon">${ICONS[section.icon] || ''}</span>
       <h2 class="section-title">${section.title}</h2>
       <p class="section-question">${qText}</p>
       <div class="spectrum-container" id="spectrum-${section.id}-0"></div>`;
 
-    section.questions.forEach((q, qi) => {
-      if (qi === 0) return;
-      const qt = QUESTIONS[q.col] || q.col;
-      html += `<p class="spectrum-sub-label">${qt}</p><div class="spectrum-container" id="spectrum-${section.id}-${qi}"></div>`;
-    });
+    if (split) {
+      html += `<div class="impact-highlight">
+        <div class="impact-stats">
+          <div class="impact-stat impact-positive">
+            <span class="impact-pct">${split.pctPos}%</span>
+            <span class="impact-label">${splitLabels[0]}</span>
+          </div>
+          <span class="impact-divider">/</span>
+          <div class="impact-stat impact-negative">
+            <span class="impact-pct">${split.pctNeg}%</span>
+            <span class="impact-label">${splitLabels[1]}</span>
+          </div>
+        </div>
+        <div class="impact-observation">${IMPACT_OBS[section.id] || ''}</div>
+      </div>`;
+    }
+
+    // Collapsed: show sub-questions as items below (not separate distribution graphs)
+    if (section.questions.length > 1) {
+      html += '<div class="sub-questions">';
+      section.questions.forEach((q, qi) => {
+        if (qi === 0) return;
+        const qt = QUESTIONS[q.col] || q.col;
+        const subVals = col(data, q.col);
+        const subAvg = subVals.length ? mean(subVals).toFixed(1) : 'N/A';
+        let aiText = '';
+        if (q.aiCol) {
+          const aiSubVals = col(data, q.aiCol);
+          if (aiSubVals.length) {
+            const aiSubMean = mean(aiSubVals);
+            const dir = aiSubMean > 3.1 ? '\u2191' : aiSubMean < 2.9 ? '\u2193' : '\u2192';
+            aiText = ` <span class="sub-q-ai">AI ${dir} ${aiSubMean.toFixed(1)}</span>`;
+          }
+        }
+        html += `<div class="sub-question-item">
+          <span class="sub-q-text">\u201C${qt}\u201D</span>
+          <span class="sub-q-avg">${subAvg}/${q.scale[1]}${aiText}</span>
+        </div>`;
+      });
+      html += '</div>';
+    }
 
     if (section.likertItems) html += `<div id="likert-${section.id}"></div>`;
     html += `<p class="editorial">${genEditorial(section, data)}</p></div>`;
     el.innerHTML = html;
     results.appendChild(el);
 
-    // Render spectrum bars
+    // Render only primary spectrum bar (collapsed view)
     requestAnimationFrame(() => {
-      section.questions.forEach((q, qi) => {
-        const ctr = document.getElementById(`spectrum-${section.id}-${qi}`);
-        if (ctr) {
-          const cid = `${section.id}-${qi}`;
-          const elems = renderSpectrumBar(ctr, data, q, cid);
-          if (elems) CHARTS.set(cid, elems);
-        }
-      });
+      const ctr = document.getElementById(`spectrum-${section.id}-0`);
+      if (ctr) {
+        const cid = `${section.id}-0`;
+        const elems = renderSpectrumBar(ctr, data, primaryQ, cid);
+        if (elems) CHARTS.set(cid, elems);
+      }
       if (section.likertItems) {
         const lc = document.getElementById(`likert-${section.id}`);
         if (lc) renderLikertChart(lc, data, section.likertItems, section.id);
@@ -728,6 +885,13 @@ function setupNavigation() {
     stickyNav.classList.toggle('visible', show);
     filterBar.classList.toggle('visible', show);
   }).observe(methEl);
+
+  // Compact header after scrolling past hero
+  const heroEl = document.getElementById('hero');
+  const siteHeader = document.getElementById('site-header');
+  new IntersectionObserver(([e]) => {
+    siteHeader.classList.toggle('compact', !e.isIntersecting);
+  }, { threshold: 0 }).observe(heroEl);
 }
 
 // ── Filters ──
