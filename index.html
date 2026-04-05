@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Human Flourishing in the Age of AI?</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..500&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- Header -->
+    <header class="site-header">
+        <div class="header-inner">
+            <img src="images/MediaLab-logo.png" alt="MIT Media Lab" class="logo logo-left">
+            <img src="images/AHA-logo.png" alt="AHA Research Program" class="logo logo-right">
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section id="hero" class="hero">
+        <canvas id="hero-canvas"></canvas>
+        <div class="hero-content">
+            <h1 class="hero-title">Human Flourishing<br>in the Age of AI<span class="hero-q">?</span></h1>
+            <p class="hero-subtitle">A large-scale survey exploring how artificial intelligence shapes the dimensions of human wellbeing&thinsp;&mdash;&thinsp;from happiness and health to creativity, agency, and purpose.</p>
+            <div class="hero-credits">
+                <span>MIT Media Lab</span>
+                <span class="hero-dot">&middot;</span>
+                <span>Advancing Humans with AI (AHA) Research Program</span>
+            </div>
+            <div class="scroll-cue">
+                <span>Scroll to explore</span>
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 4v12m0 0l-4-4m4 4l4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+        </div>
+    </section>
+
+    <!-- Preliminary Data Banner -->
+    <div class="data-banner">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1l7 14H1L8 1z" stroke="currentColor" stroke-width="1.2"/><path d="M8 6v4m0 2v.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        <span>This visualization reflects preliminary data. Additional responses are ongoing.</span>
+    </div>
+
+    <!-- Methodology Section -->
+    <section id="methodology" class="methodology">
+        <div class="container">
+            <h2 class="section-heading">About This Study</h2>
+            <div class="methodology-grid">
+                <div class="method-block">
+                    <h3>Survey Design</h3>
+                    <p>The AI and Human Flourishing Survey was developed by the Advancing Humans with AI (AHA) Research Program at MIT Media Lab. Drawing on validated instruments&thinsp;&mdash;&thinsp;including the <em>Harvard Human Flourishing Index</em> and the <em>Comprehensive Inventory of Thriving</em>&thinsp;&mdash;&thinsp;the survey measures both baseline wellbeing and the perceived impact of AI tools across multiple dimensions of human flourishing.</p>
+                </div>
+                <div class="method-block">
+                    <h3>Measurement Approach</h3>
+                    <p>For each flourishing dimension, respondents first rate their current state on a 0&ndash;10 scale, then indicate how AI tools have affected that dimension on a separate 7-point impact scale (from &ldquo;made this much worse&rdquo; to &ldquo;made this much better&rdquo;). This paired design allows us to visualize both <em>where people stand</em> and <em>which direction AI is pulling</em>.</p>
+                </div>
+                <div class="method-block">
+                    <h3>Sample</h3>
+                    <p>This preliminary dataset includes approximately <strong>1,000 responses</strong>. Participants were recruited through Prolific and represent a diverse cross-section of AI users across demographics, education levels, and usage patterns. Data collection is ongoing, and visualizations will update as the sample grows.</p>
+                </div>
+            </div>
+            <div class="reading-guide">
+                <h3>How to Read the Visualizations</h3>
+                <div class="guide-row">
+                    <div class="guide-item">
+                        <div class="guide-swatch gradient-swatch"></div>
+                        <span><strong>Spectrum track</strong>&thinsp;&mdash;&thinsp;The gradient from red to green represents the full response scale, from negative to positive.</span>
+                    </div>
+                    <div class="guide-item">
+                        <div class="guide-swatch density-swatch"></div>
+                        <span><strong>Current distribution</strong>&thinsp;&mdash;&thinsp;The light grey curve shows where baseline responses cluster. Taller peaks mean more people responded near that value.</span>
+                    </div>
+                    <div class="guide-item">
+                        <div class="guide-swatch ai-density-swatch"></div>
+                        <span><strong>AI-adjusted distribution</strong>&thinsp;&mdash;&thinsp;The dark grey curve shows where responses shift after accounting for perceived AI impact. Compare with the light curve to see the direction of change.</span>
+                    </div>
+                    <div class="guide-item">
+                        <div class="guide-swatch avg-swatch"></div>
+                        <span><strong>Average marker</strong>&thinsp;&mdash;&thinsp;The dashed vertical line marks the mean score. The &ldquo;AI&rdquo; label marks the AI-adjusted average. Hover for details.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Sticky Navigation -->
+    <nav id="sticky-nav" class="sticky-nav">
+        <div class="nav-inner" id="nav-links"></div>
+        <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+    </nav>
+
+    <!-- Demographic Filter Bar -->
+    <div id="filter-bar" class="filter-bar">
+        <div class="filter-inner">
+            <span class="filter-label">Filter by</span>
+            <div class="filter-controls" id="filter-controls"></div>
+            <button class="filter-reset" id="filter-reset">Reset all</button>
+            <span class="filter-count" id="filter-count"></span>
+        </div>
+    </div>
+
+    <!-- Results Container -->
+    <main id="results" class="results"></main>
+
+    <!-- Footer -->
+    <footer class="site-footer">
+        <div class="container">
+            <div class="footer-inner">
+                <div class="footer-logos">
+                    <img src="images/MediaLab-logo.png" alt="MIT Media Lab" class="footer-logo">
+                    <img src="images/AHA-logo.png" alt="AHA" class="footer-logo">
+                </div>
+                <p class="footer-text">AI and Human Flourishing Survey &middot; MIT Media Lab &middot; AHA Research Program</p>
+                <p class="footer-note">Data is preliminary and subject to revision. This is a research visualization, not a policy recommendation.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Tooltip -->
+    <div id="tooltip" class="tooltip"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="app.js"></script>
+</body>
+</html>
