@@ -404,9 +404,9 @@ function renderSpectrumBar(container, data, qConfig, chartId) {
   // Scale labels
   const scaleBase = densityH + trackH;
   g.append('text').attr('x',0).attr('y',scaleBase+22)
-    .attr('font-family',"'Inter', sans-serif").attr('font-size','11px').attr('fill','#94a3b8').text(qConfig.labels[0]);
+    .attr('font-family',"'Inter', sans-serif").attr('font-size','13px').attr('font-weight','500').attr('fill','#0f172a').text(qConfig.labels[0]);
   g.append('text').attr('x',w).attr('y',scaleBase+22).attr('text-anchor','end')
-    .attr('font-family',"'Inter', sans-serif").attr('font-size','11px').attr('fill','#94a3b8').text(qConfig.labels[1]);
+    .attr('font-family',"'Inter', sans-serif").attr('font-size','13px').attr('font-weight','500').attr('fill','#0f172a').text(qConfig.labels[1]);
 
   // Ticks
   const tickStep = qConfig.scale[1] <= 5 ? 1 : 2;
@@ -459,40 +459,49 @@ function renderHBarChart(container, items, color, maxPct) {
 // ── Diverging Bar Chart (AI Impact) ──
 function renderDivergingChart(container, ranking) {
   const margin = { top: 8, right: 50, bottom: 24, left: 160 };
-  const barH = 30, gap = 6;
+  const barH = 28, gap = 8;
   const h = ranking.length * (barH + gap) + margin.top + margin.bottom;
   const totalW = container.clientWidth || 700;
   const w = totalW - margin.left - margin.right;
-  const maxDev = Math.max(...ranking.map(d => Math.abs(d.deviation)), 0.5);
+  const maxPct = Math.max(...ranking.flatMap(d => [d.pctPos, d.pctNeg]), 10);
 
   const svg = d3.select(container).append('svg').attr('viewBox', `0 0 ${totalW} ${h}`)
     .attr('preserveAspectRatio', 'xMidYMid meet').style('width', '100%').style('height', 'auto');
   const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
-  const x = d3.scaleLinear().domain([-maxDev, maxDev]).range([0, w]);
-  const center = x(0);
+  const half = w / 2;
+  const x = d3.scaleLinear().domain([0, maxPct]).range([0, half - 30]);
 
   // Center line
-  g.append('line').attr('x1', center).attr('x2', center).attr('y1', -4).attr('y2', h - margin.top - margin.bottom + 4)
+  g.append('line').attr('x1', half).attr('x2', half).attr('y1', -4).attr('y2', h - margin.top - margin.bottom + 4)
     .attr('stroke', '#cbd5e1').attr('stroke-width', 1);
-  g.append('text').attr('x', center).attr('y', h - margin.top - margin.bottom + 18).attr('text-anchor', 'middle')
-    .attr('font-family', "'Inter', sans-serif").attr('font-size', '9px').attr('fill', '#94a3b8').text('Neutral (3.0)');
+  g.append('text').attr('x', half).attr('y', h - margin.top - margin.bottom + 18).attr('text-anchor', 'middle')
+    .attr('font-family', "'Inter', sans-serif").attr('font-size', '9px').attr('fill', '#94a3b8').text('0%');
 
   ranking.forEach((d, i) => {
     const y = i * (barH + gap);
-    const barX = d.deviation >= 0 ? center : x(d.deviation);
-    const barW = Math.abs(x(d.deviation) - center);
-    const fillColor = d.deviation >= 0 ? '#16a34a' : '#dc2626';
 
-    g.append('rect').attr('x', barX).attr('y', y).attr('width', barW).attr('height', barH)
-      .attr('rx', 4).attr('fill', fillColor).attr('opacity', 0.6);
-    g.append('text').attr('x', -8).attr('y', y + barH / 2 + 1).attr('text-anchor', 'end')
+    // Dimension label
+    g.append('text').attr('x', -8).attr('y', y + barH / 2).attr('text-anchor', 'end')
       .attr('dominant-baseline', 'middle').attr('font-family', "'Inter', sans-serif")
       .attr('font-size', '12px').attr('fill', '#475569').text(d.dimension);
-    g.append('text').attr('x', d.deviation >= 0 ? x(d.deviation) + 6 : x(d.deviation) - 6)
-      .attr('y', y + barH / 2 + 1).attr('text-anchor', d.deviation >= 0 ? 'start' : 'end')
+
+    // Green bar (improved) — extends right from center
+    const greenW = x(d.pctPos);
+    g.append('rect').attr('x', half).attr('y', y).attr('width', greenW).attr('height', barH)
+      .attr('rx', 4).attr('fill', '#16a34a').attr('opacity', 0.55);
+    g.append('text').attr('x', half + greenW + 6).attr('y', y + barH / 2)
       .attr('dominant-baseline', 'middle').attr('font-family', "'Inter', sans-serif")
-      .attr('font-size', '12px').attr('font-weight', '600')
-      .attr('fill', fillColor).text((d.deviation >= 0 ? '+' : '') + d.deviation.toFixed(2));
+      .attr('font-size', '11px').attr('font-weight', '600').attr('fill', '#16a34a')
+      .text(d.pctPos + '%');
+
+    // Red bar (worsened) — extends left from center
+    const redW = x(d.pctNeg);
+    g.append('rect').attr('x', half - redW).attr('y', y).attr('width', redW).attr('height', barH)
+      .attr('rx', 4).attr('fill', '#dc2626').attr('opacity', 0.55);
+    g.append('text').attr('x', half - redW - 6).attr('y', y + barH / 2)
+      .attr('text-anchor', 'end').attr('dominant-baseline', 'middle').attr('font-family', "'Inter', sans-serif")
+      .attr('font-size', '11px').attr('font-weight', '600').attr('fill', '#dc2626')
+      .text(d.pctNeg + '%');
   });
 }
 
@@ -582,7 +591,11 @@ function computeDemographics(data) {
   const ranking = aiDims.map(dim => {
     const allVals = dim.cols.flatMap(c => col(data, c));
     const m = allVals.length ? mean(allVals) : 3;
-    return { dimension: dim.name, mean: m, deviation: m - 3, n: allVals.length };
+    const improved = allVals.filter(v => v > 3).length;
+    const worsened = allVals.filter(v => v < 3).length;
+    const pctPos = allVals.length ? Math.round(100 * improved / allVals.length) : 0;
+    const pctNeg = allVals.length ? Math.round(100 * worsened / allVals.length) : 0;
+    return { dimension: dim.name, mean: m, deviation: m - 3, n: allVals.length, pctPos, pctNeg };
   }).sort((a,b) => b.deviation - a.deviation);
 
   return { gender: count('gender'), education: count('education_group'), aiUsage: count('ai_usage_group'), tools, contexts, ranking };
@@ -745,9 +758,9 @@ function renderAll(data) {
   aiSection.innerHTML = `<div class="section-inner">
     <span class="section-icon">${ICONS.aiimpact}</span>
     <h2 class="section-title">Where AI Helps \u2014 and Where It Hurts</h2>
-    <p class="section-question" style="font-style:normal">Mean AI impact across each flourishing dimension. Bars extend right for positive impact (green) and left for negative impact (red), centered on neutral (3.0).</p>
+    <p class="section-question" style="font-style:normal">For each flourishing dimension, the green bar shows the percentage of respondents who say AI improved that area, while the red bar shows the percentage who say AI made it worse.</p>
     <div id="chart-airanking" style="margin:24px 0"></div>
-    <p class="editorial">${demos.ranking[0]?.dimension || 'Skills'} shows the strongest positive AI effect (${demos.ranking[0]?.deviation > 0 ? '+' : ''}${demos.ranking[0]?.deviation.toFixed(2)}), while ${demos.ranking[demos.ranking.length-1]?.dimension || 'Social'} shows the most negative (${demos.ranking[demos.ranking.length-1]?.deviation.toFixed(2)}). Most dimensions cluster slightly above neutral, suggesting AI is perceived as a modest net positive \u2014 but the variance across domains tells a richer story.</p>
+    <p class="editorial">${demos.ranking[0]?.dimension || 'Skills'} shows the highest rate of perceived improvement (${demos.ranking[0]?.pctPos}% improved vs ${demos.ranking[0]?.pctNeg}% worsened), while ${demos.ranking[demos.ranking.length-1]?.dimension || 'Social'} shows the least favorable balance (${demos.ranking[demos.ranking.length-1]?.pctPos}% improved vs ${demos.ranking[demos.ranking.length-1]?.pctNeg}% worsened). Across most dimensions, more people report improvement than harm, but the gap varies dramatically\u2014revealing where AI\u2019s benefits are broadly felt and where its costs concentrate.</p>
   </div>`;
   results.appendChild(aiSection);
 
